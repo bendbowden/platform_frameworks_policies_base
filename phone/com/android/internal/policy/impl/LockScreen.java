@@ -20,7 +20,9 @@ import com.android.internal.R;
 import com.android.internal.telephony.IccCard;
 import com.android.internal.widget.LockPatternUtils;
 import com.android.internal.widget.SlidingTab;
+import com.android.internal.widget.SlidingTab.OnTriggerListener;
 import com.android.internal.widget.RotarySelector;
+import com.android.internal.widget.RotarySelector.OnDialTriggerListener;
 
 import android.content.Context;
 import android.content.Intent;
@@ -42,6 +44,8 @@ import android.provider.Settings;
 
 import java.util.Date;
 import java.io.File;
+import java.net.URISyntaxException;
+import android.content.ActivityNotFoundException;
 
 /**
  * The screen within {@link LockPatternKeyguardView} that shows general
@@ -62,8 +66,9 @@ import java.io.File;
     private final KeyguardScreenCallback mCallback;
 
     private TextView mCarrier;
-    private SlidingTab mTabSelector = null;
-    private RotarySelector mRotarySelector = null;    
+    private SlidingTab mTabSelector;
+    private SlidingTab mSelector2; 
+    private RotarySelector mRotarySelector;   
     private TextView mTime;
     private TextView mDate;
     private TextView mStatus1;
@@ -104,8 +109,23 @@ import java.io.File;
     private boolean mEnableMenuKeyInLockScreen;
     private boolean mMenuUnlockScreen = (Settings.System.getInt(mContext.getContentResolver(),
          Settings.System.MENU_UNLOCK_SCREEN, 0) == 1);
+    
+    private boolean mCustomAppToggle = (Settings.System.getInt(mContext.getContentResolver(),
+            Settings.System.LOCKSCREEN_CUSTOM_APP_TOGGLE, 0) == 1);
 
-    private boolean mUseRotaryLockScreen;
+    private String mCustomAppActivity = (Settings.System.getString(mContext.getContentResolver(),
+            Settings.System.LOCKSCREEN_CUSTOM_APP_ACTIVITY));
+
+    private int mLockScreenStyle = (Settings.System.getInt(mContext.getContentResolver(),
+            Settings.System.LOCKSCREEN_STYLE_PREF, 1));
+
+    private boolean mRotaryUnlockDown = (Settings.System.getInt(mContext.getContentResolver(),
+            Settings.System.LOCKSCREEN_ROTARY_UNLOCK_DOWN, 0) == 1);
+
+    private boolean mRotaryHideArrows = (Settings.System.getInt(mContext.getContentResolver(),
+            Settings.System.LOCKSCREEN_ROTARY_HIDE_ARROWS, 0) == 1);
+
+    private boolean mUseRotaryLockScreen = (mLockScreenStyle == 2);
 
     /**
      * The status of this lock screen.
@@ -201,21 +221,12 @@ import java.io.File;
                     + " res orient=" + context.getResources().getConfiguration().orientation);
         }
 
-    mUseRotaryLockScreen = (Settings.System.getInt(
-	    context.getContentResolver(),
-	    Settings.System.USE_ROTARY_LOCKSCREEN, 0) == 1
-	);
-
         final LayoutInflater inflater = LayoutInflater.from(context);
         if (DBG) Log.v(TAG, "Creation orientation = " + mCreationOrientation);
         if (mCreationOrientation != Configuration.ORIENTATION_LANDSCAPE) {
-            inflater.inflate((mUseRotaryLockScreen ?
-	        R.layout.keyguard_screen_rotary_unlock :
-		R.layout.keyguard_screen_tab_unlock), this, true);
+            inflater.inflate(R.layout.keyguard_screen_tab_unlock, this, true);
         } else {
-            inflater.inflate((mUseRotaryLockScreen ?
-		R.layout.keyguard_screen_rotary_unlock_land :
-		R.layout.keyguard_screen_tab_unlock_land), this, true);    
+            inflater.inflate(R.layout.keyguard_screen_tab_unlock_land, this, true);
         }
 
         mCarrier = (TextView) findViewById(R.id.carrier);
@@ -234,15 +245,18 @@ import java.io.File;
        
         mScreenLocked = (TextView) findViewById(R.id.screenLocked);
         
-        if (mUseRotaryLockScreen) {
-	    mRotarySelector = (RotarySelector) findViewById(R.id.rotary_selector);
-	} else {
-	    mTabSelector = (SlidingTab) findViewById(R.id.tab_selector);
-	    if (mTabSelector != null) {
-		mTabSelector.setHoldAfterTrigger(true, false);
-		mTabSelector.setLeftHintText(R.string.lockscreen_unlock_label);
-	    }
-	}
+        mRotarySelector = (RotarySelector) findViewById(R.id.rotary_selector);
+
+        mTabSelector = (SlidingTab) findViewById(R.id.tab_selector);
+        mTabSelector.setHoldAfterTrigger(true, false);
+        mTabSelector.setLeftHintText(R.string.lockscreen_unlock_label);
+
+        mSelector2 = (SlidingTab) findViewById(R.id.tab_selector2);
+        if (mSelector2 != null) {
+            mSelector2.setHoldAfterTrigger(true, false);
+            mSelector2.setLeftHintText(R.string.lockscreen_phone_label);
+            mSelector2.setRightHintText(R.string.lockscreen_messaging_label);
+        }
 
         mEmergencyCallText = (TextView) findViewById(R.id.emergencyCallText);
         mEmergencyCallButton = (Button) findViewById(R.id.emergencyCallButton);
@@ -313,32 +327,66 @@ import java.io.File;
         mAudioManager = (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);
         mSilentMode = isSilentMode();
 
-        if (mUseRotaryLockScreen) {
-	    if (mRotarySelector != null) {
-		mRotarySelector.setLeftHandleResource(
-			R.drawable.ic_jog_dial_unlock);
-	    }
-	} else {
-	    if (mTabSelector != null) {
-		mTabSelector.setLeftTabResources(
-			R.drawable.ic_jog_dial_unlock,
-                	R.drawable.jog_tab_target_green,
-                	R.drawable.jog_tab_bar_left_unlock,
-                	R.drawable.jog_tab_left_unlock);
-	    }
-	}
+        //Rotary setup
+        if(!mRotaryUnlockDown){
+            mRotarySelector.setLeftHandleResource(R.drawable.ic_jog_dial_unlock);
+            mRotarySelector.setMidHandleResource(R.drawable.ic_jog_dial_custom);
+        }else{
+            mRotarySelector.setLeftHandleResource(R.drawable.ic_jog_dial_custom);
+            mRotarySelector.setMidHandleResource(R.drawable.ic_jog_dial_unlock);
+        }
+        mRotarySelector.enableCustomAppDimple(mCustomAppToggle);
+        if(mRotaryHideArrows)
+            mRotarySelector.hideArrows(true);
+
+        mTabSelector.setLeftTabResources(
+                R.drawable.ic_jog_dial_unlock,
+                R.drawable.jog_tab_target_green,
+                R.drawable.jog_tab_bar_left_unlock,
+                R.drawable.jog_tab_left_unlock);
 
         updateRightTabResources();
 
-        if (mUseRotaryLockScreen) {
-	    if (mRotarySelector != null) {
-		mRotarySelector.setOnDialTriggerListener(this);
-	    }
-	} else {
-	    if (mTabSelector != null) {
-		mTabSelector.setOnTriggerListener(this);
-	    }
-	}
+        mRotarySelector.setOnDialTriggerListener(this);
+        mTabSelector.setOnTriggerListener(this);
+
+        if (mSelector2 != null) {
+            mSelector2.setLeftTabResources(R.drawable.ic_jog_dial_answer,
+                    R.drawable.jog_tab_target_green, R.drawable.jog_tab_bar_left_generic,
+                    R.drawable.jog_tab_left_generic);
+
+            mSelector2.setRightTabResources(R.drawable.ic_jog_dial_custom,
+                    R.drawable.jog_tab_target_green, R.drawable.jog_tab_bar_right_generic,
+                    R.drawable.jog_tab_right_generic);
+
+            mSelector2.setOnTriggerListener(new OnTriggerListener() {
+                public void onTrigger(View v, int whichHandle) {
+                    if (whichHandle == SlidingTab.OnTriggerListener.LEFT_HANDLE) {
+                        Intent callIntent = new Intent(Intent.ACTION_DIAL);
+                        callIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        getContext().startActivity(callIntent);
+                        mCallback.goToUnlockScreen();
+                    } else if (whichHandle == SlidingTab.OnTriggerListener.RIGHT_HANDLE) {
+                        if (mCustomAppActivity != null) {
+                            try {
+                                Intent i = Intent.parseUri(mCustomAppActivity, 0);
+                                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                                        | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
+                                mContext.startActivity(i);
+                                mCallback.goToUnlockScreen();
+                            } catch (URISyntaxException e) {
+                            } catch (ActivityNotFoundException e) {
+                            }
+                        }
+                    }
+                }
+
+                @Override
+                public void onGrabbedStateChange(View v, int grabbedState) {
+                    mCallback.pokeWakelock();
+                }
+            });
+        }
 
         resetStatusInfo(updateMonitor);
     }
@@ -349,27 +397,20 @@ import java.io.File;
         boolean vibe = mSilentMode
             && (mAudioManager.getRingerMode() == AudioManager.RINGER_MODE_VIBRATE);
 
-        if (mUseRotaryLockScreen) {
-	    if (mRotarySelector != null) {
-		mRotarySelector.setRightHandleResource(
-                	mSilentMode ? ( vibe ? R.drawable.ic_jog_dial_vibrate_on
-                                     	     : R.drawable.ic_jog_dial_sound_off )
-                                    : R.drawable.ic_jog_dial_sound_on);
-	    }
-	} else {
-	    if (mTabSelector != null) {
-		mTabSelector.setRightTabResources(
-                	mSilentMode ? ( vibe ? R.drawable.ic_jog_dial_vibrate_on
-					     : R.drawable.ic_jog_dial_sound_off )
-				    : R.drawable.ic_jog_dial_sound_on,
-                	mSilentMode ? R.drawable.jog_tab_target_yellow
+        mRotarySelector
+                .setRightHandleResource(mSilentMode ? (vibe ? R.drawable.ic_jog_dial_vibrate_on
+                        : R.drawable.ic_jog_dial_sound_off) : R.drawable.ic_jog_dial_sound_on);
+
+        mTabSelector.setRightTabResources(
+                mSilentMode ? ( vibe ? R.drawable.ic_jog_dial_vibrate_on
+                                     : R.drawable.ic_jog_dial_sound_off )
+                            : R.drawable.ic_jog_dial_sound_on,
+                mSilentMode ? R.drawable.jog_tab_target_yellow
                             : R.drawable.jog_tab_target_gray,
-                	mSilentMode ? R.drawable.jog_tab_bar_right_sound_on
+                mSilentMode ? R.drawable.jog_tab_bar_right_sound_on
                             : R.drawable.jog_tab_bar_right_sound_off,
-                	mSilentMode ? R.drawable.jog_tab_right_sound_on
+                mSilentMode ? R.drawable.jog_tab_right_sound_on
                             : R.drawable.jog_tab_right_sound_off);
-    	    }
-	}
     }
 
     private void resetStatusInfo(KeyguardUpdateMonitor updateMonitor) {
@@ -438,8 +479,36 @@ import java.io.File;
     }
 
     public void onDialTrigger(View v, int whichHandle) {
-        if (whichHandle == RotarySelector.OnDialTriggerListener.LEFT_HANDLE) {
+        boolean mUnlockTrigger=false;
+        boolean mCustomAppTrigger=false;
+
+        if(whichHandle == RotarySelector.OnDialTriggerListener.LEFT_HANDLE){
+            if(mRotaryUnlockDown)
+                mCustomAppTrigger=true;
+            else
+                mUnlockTrigger=true;
+        }
+        if(whichHandle == RotarySelector.OnDialTriggerListener.MID_HANDLE){
+            if(mRotaryUnlockDown)
+                mUnlockTrigger=true;
+            else
+                mCustomAppTrigger=true;
+        }
+
+        if (mUnlockTrigger) {
             mCallback.goToUnlockScreen();
+        } else if (mCustomAppTrigger) {
+            if (mCustomAppActivity != null) {
+                try {
+                    Intent i = Intent.parseUri(mCustomAppActivity, 0);
+                    i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                        | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
+                    mContext.startActivity(i);
+                    mCallback.goToUnlockScreen();
+                } catch (URISyntaxException e) {
+                } catch (ActivityNotFoundException e) {
+                }
+            }
         } else if (whichHandle == RotarySelector.OnDialTriggerListener.RIGHT_HANDLE) {
             // toggle silent mode
             mSilentMode = !mSilentMode;
@@ -475,15 +544,11 @@ import java.io.File;
 
     /** {@inheritDoc} */
     public void onGrabbedStateChange(View v, int grabbedState) {
-        if (!mUseRotaryLockScreen) {
-            if (grabbedState == SlidingTab.OnTriggerListener.RIGHT_HANDLE) {
-            	mSilentMode = isSilentMode();
-		if (mTabSelector != null) {
-                    mTabSelector.setRightHintText(mSilentMode ? R.string.lockscreen_sound_on_label
-		    : R.string.lockscreen_sound_off_label);
-        	}
-	    }
-	}
+        if (grabbedState == SlidingTab.OnTriggerListener.RIGHT_HANDLE) {
+            mSilentMode = isSilentMode();
+            mTabSelector.setRightHintText(mSilentMode ? R.string.lockscreen_sound_on_label
+                    : R.string.lockscreen_sound_off_label);
+        }
 
         mCallback.pokeWakelock();
     }
@@ -690,6 +755,10 @@ import java.io.File;
         // The emergency call button no longer appears on this screen.
         if (DBG) Log.d(TAG, "updateLayout: status=" + status);
 
+        mCustomAppToggle = (Settings.System.getInt(mContext.getContentResolver(),
+                                Settings.System.LOCKSCREEN_CUSTOM_APP_TOGGLE, 0) == 1);
+        mRotarySelector.enableCustomAppDimple(mCustomAppToggle);
+
         mEmergencyCallButton.setVisibility(View.GONE); // in almost all cases
 
         switch (status) {
@@ -704,16 +773,24 @@ import java.io.File;
                 mScreenLocked.setText("");
 
                 // layout
-		mScreenLocked.setVisibility(View.VISIBLE);
+                mScreenLocked.setVisibility(View.VISIBLE);
                 if (mUseRotaryLockScreen) {
-		    if (mRotarySelector != null) {
-		    	mRotarySelector.setVisibility(View.VISIBLE);
-		    }
-		} else {
-		    if (mTabSelector != null) {
-		    	mTabSelector.setVisibility(View.VISIBLE);
-		    }
-		}
+                    mRotarySelector.setVisibility(View.VISIBLE);
+                    mTabSelector.setVisibility(View.GONE);
+                    if (mSelector2 != null) {
+                        mSelector2.setVisibility(View.GONE);
+                    }
+                } else {
+                    mRotarySelector.setVisibility(View.GONE);
+                    mTabSelector.setVisibility(View.VISIBLE);
+                    if (mSelector2 != null) {
+                        if (mCustomAppToggle) {
+                            mSelector2.setVisibility(View.VISIBLE);
+                        } else {
+                            mSelector2.setVisibility(View.GONE);
+                        }
+                    }
+                }
                 mEmergencyCallText.setVisibility(View.GONE);
                 break;
             case NetworkLocked:
@@ -727,15 +804,23 @@ import java.io.File;
 
                 // layout
                 mScreenLocked.setVisibility(View.VISIBLE);
-                 if (mUseRotaryLockScreen) {
-		    if (mRotarySelector != null) {
-		    	mRotarySelector.setVisibility(View.VISIBLE);
-		    }
-		} else {
-		    if (mTabSelector != null) {
-		    	mTabSelector.setVisibility(View.VISIBLE);
-		    }
-		}
+                if (mUseRotaryLockScreen) {
+                    mRotarySelector.setVisibility(View.VISIBLE);
+                    mTabSelector.setVisibility(View.GONE);
+                    if (mSelector2 != null) {
+                        mSelector2.setVisibility(View.GONE);
+                    }
+                } else {
+                    mRotarySelector.setVisibility(View.GONE);
+                    mTabSelector.setVisibility(View.VISIBLE);
+                    if (mSelector2 != null) {
+                        if (mCustomAppToggle) {
+                            mSelector2.setVisibility(View.VISIBLE);
+                        } else {
+                            mSelector2.setVisibility(View.GONE);
+                        }
+                    }
+                }
                 mEmergencyCallText.setVisibility(View.GONE);
                 break;
             case SimMissing:
@@ -745,15 +830,23 @@ import java.io.File;
 
                 // layout
                 mScreenLocked.setVisibility(View.VISIBLE);
-                 if (mUseRotaryLockScreen) {
-		    if (mRotarySelector != null) {
-		    	mRotarySelector.setVisibility(View.VISIBLE);
-		    }
-		} else {
-		    if (mTabSelector != null) {
-		    	mTabSelector.setVisibility(View.VISIBLE);
-		    }
-		}
+                if (mUseRotaryLockScreen) {
+                    mRotarySelector.setVisibility(View.VISIBLE);
+                    mTabSelector.setVisibility(View.GONE);
+                    if (mSelector2 != null) {
+                        mSelector2.setVisibility(View.GONE);
+                    }
+                } else {
+                    mRotarySelector.setVisibility(View.GONE);
+                    mTabSelector.setVisibility(View.VISIBLE);
+                    if (mSelector2 != null) {
+                        if (mCustomAppToggle) {
+                            mSelector2.setVisibility(View.VISIBLE);
+                        } else {
+                            mSelector2.setVisibility(View.GONE);
+                        }
+                    }
+                }
                 mEmergencyCallText.setVisibility(View.VISIBLE);
                 // do not need to show the e-call button; user may unlock
                 break;
@@ -767,15 +860,11 @@ import java.io.File;
 
                 // layout
                 mScreenLocked.setVisibility(View.VISIBLE);
-                if (mUseRotaryLockScreen) {
-		    if (mRotarySelector != null) {
-		    	mRotarySelector.setVisibility(View.GONE);
-		    }
-		} else {
-		    if (mTabSelector != null) {
-		    	mTabSelector.setVisibility(View.GONE);
-		    }
-		}
+                mRotarySelector.setVisibility(View.GONE);
+                mTabSelector.setVisibility(View.GONE); // cannot unlock
+                if (mSelector2 != null) {
+                    mSelector2.setVisibility(View.GONE);
+                }
                 mEmergencyCallText.setVisibility(View.VISIBLE);
                 mEmergencyCallButton.setVisibility(View.VISIBLE);
                 break;
@@ -789,14 +878,22 @@ import java.io.File;
                 // layout
                 mScreenLocked.setVisibility(View.INVISIBLE);
                 if (mUseRotaryLockScreen) {
-		    if (mRotarySelector != null) {
-		    	mRotarySelector.setVisibility(View.VISIBLE);
-		    }
-		} else {
-		    if (mTabSelector != null) {
-		    	mTabSelector.setVisibility(View.VISIBLE);
-		    }
-		}
+                    mRotarySelector.setVisibility(View.VISIBLE);
+                    mTabSelector.setVisibility(View.GONE);
+                    if (mSelector2 != null) {
+                        mSelector2.setVisibility(View.GONE);
+                    }
+                } else {
+                    mRotarySelector.setVisibility(View.GONE);
+                    mTabSelector.setVisibility(View.VISIBLE);
+                    if (mSelector2 != null) {
+                        if (mCustomAppToggle) {
+                            mSelector2.setVisibility(View.VISIBLE);
+                        } else {
+                            mSelector2.setVisibility(View.GONE);
+                        }
+                    }
+                }
                 mEmergencyCallText.setVisibility(View.GONE);
                 break;
             case SimPukLocked:
@@ -809,15 +906,11 @@ import java.io.File;
 
                 // layout
                 mScreenLocked.setVisibility(View.VISIBLE);
-                if (mUseRotaryLockScreen) {
-		    if (mRotarySelector != null) {
-		    	mRotarySelector.setVisibility(View.GONE);
-		    }
-		} else {
-		    if (mTabSelector != null) {
-		    	mTabSelector.setVisibility(View.GONE);
-		    }
-		}
+                mRotarySelector.setVisibility(View.GONE);
+                mTabSelector.setVisibility(View.GONE); // cannot unlock
+                if (mSelector2 != null) {
+                     mSelector2.setVisibility(View.GONE);
+                }
                 mEmergencyCallText.setVisibility(View.VISIBLE);
                 mEmergencyCallButton.setVisibility(View.VISIBLE);
                 break;
