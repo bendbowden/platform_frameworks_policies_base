@@ -22,7 +22,6 @@ import com.android.internal.widget.LockPatternUtils;
 import com.android.internal.widget.SlidingTab;
 import com.android.internal.widget.SlidingTab.OnTriggerListener;
 import com.android.internal.widget.RotarySelector;
-import com.android.internal.widget.RotarySelector.OnDialTriggerListener;
 
 import android.content.Context;
 import android.content.Intent;
@@ -69,8 +68,9 @@ import android.content.ActivityNotFoundException;
     private SlidingTab mTabSelector;
     private SlidingTab mSelector2; 
     private RotarySelector mRotarySelector;   
-    private TextView mTime;
     private TextView mDate;
+    private TextView mTime;
+    private TextView mAmPm;
     private TextView mStatus1;
     private TextView mStatus2;
     private TextView mScreenLocked;
@@ -105,7 +105,6 @@ import android.content.ActivityNotFoundException;
     private boolean mSilentMode;
     private AudioManager mAudioManager;
     private String mDateFormatString;
-    private java.text.DateFormat mTimeFormat;
     private boolean mEnableMenuKeyInLockScreen;
     private boolean mMenuUnlockScreen = (Settings.System.getInt(mContext.getContentResolver(),
          Settings.System.MENU_UNLOCK_SCREEN, 0) == 1);
@@ -117,7 +116,7 @@ import android.content.ActivityNotFoundException;
             Settings.System.LOCKSCREEN_CUSTOM_APP_ACTIVITY));
 
     private int mLockScreenStyle = (Settings.System.getInt(mContext.getContentResolver(),
-            Settings.System.LOCKSCREEN_STYLE_PREF, 1));
+            Settings.System.LOCKSCREEN_STYLE_PREF, 3));
 
     private boolean mRotaryUnlockDown = (Settings.System.getInt(mContext.getContentResolver(),
             Settings.System.LOCKSCREEN_ROTARY_UNLOCK_DOWN, 0) == 1);
@@ -126,6 +125,11 @@ import android.content.ActivityNotFoundException;
             Settings.System.LOCKSCREEN_ROTARY_HIDE_ARROWS, 0) == 1);
 
     private boolean mUseRotaryLockScreen = (mLockScreenStyle == 2);
+
+    private boolean mUseRotaryRevLockscreen = (mLockScreenStyle == 3);
+
+    private boolean mUseLenseSquareLockscreen = (mLockScreenStyle == 4);
+    private boolean mLensePortrait = false;
 
     /**
      * The status of this lock screen.
@@ -234,6 +238,8 @@ import android.content.ActivityNotFoundException;
         mCarrier.setSelected(true);
         mCarrier.setTextColor(0xffffffff);
 
+        mTime = (TextView) findViewById(R.id.timeDisplay);
+        mAmPm = (TextView) findViewById(R.id.am_pm);
         mDate = (TextView) findViewById(R.id.date);
         mStatus1 = (TextView) findViewById(R.id.status1);
         mStatus2 = (TextView) findViewById(R.id.status2);
@@ -336,8 +342,17 @@ import android.content.ActivityNotFoundException;
             mRotarySelector.setMidHandleResource(R.drawable.ic_jog_dial_unlock);
         }
         mRotarySelector.enableCustomAppDimple(mCustomAppToggle);
+        mRotarySelector.setRevamped(mUseRotaryRevLockscreen);
+        mRotarySelector.setLenseSquare(mUseRotaryRevLockscreen);
         if(mRotaryHideArrows)
             mRotarySelector.hideArrows(true);
+
+        //hide most items when we are in potrait lense mode
+        mLensePortrait=(mUseLenseSquareLockscreen && mCreationOrientation != Configuration.ORIENTATION_LANDSCAPE);
+        if (mLensePortrait)
+            setLenseWidgetsVisibility(View.GONE);
+        else
+            setLenseWidgetsVisibility(View.VISIBLE);
 
         mTabSelector.setLeftTabResources(
                 R.drawable.ic_jog_dial_unlock,
@@ -426,7 +441,6 @@ import android.content.ActivityNotFoundException;
         refreshAlarmDisplay();
 
         refreshMusicStatus();
-        mTimeFormat = DateFormat.getTimeFormat(getContext());
         mDateFormatString = getContext().getString(R.string.full_wday_month_day_no_year);
         refreshTimeAndDateDisplay();
         updateStatusLines();
@@ -618,7 +632,7 @@ import android.content.ActivityNotFoundException;
     }
 
     private void refreshBatteryStringAndIcon() {
-        if (!mShowingBatteryInfo) {
+        if (!mShowingBatteryInfo || mLensePortrait) {
             mCharging = null;
             return;
         }
@@ -679,6 +693,7 @@ import android.content.ActivityNotFoundException;
     }
 
     private void refreshTimeAndDateDisplay() {
+        mRotarySelector.invalidate();
         mDate.setText(DateFormat.format(mDateFormatString, new Date()));
     }
 
@@ -774,8 +789,10 @@ import android.content.ActivityNotFoundException;
 
                 // layout
                 mScreenLocked.setVisibility(View.VISIBLE);
-                if (mUseRotaryLockScreen) {
+                if (mUseRotaryLockScreen || mUseRotaryRevLockscreen || mUseLenseSquareLockscreen) {
                     mRotarySelector.setVisibility(View.VISIBLE);
+                    mRotarySelector.setRevamped(mUseRotaryRevLockscreen);
+                    mRotarySelector.setLenseSquare(mUseLenseSquareLockscreen);
                     mTabSelector.setVisibility(View.GONE);
                     if (mSelector2 != null) {
                         mSelector2.setVisibility(View.GONE);
@@ -804,8 +821,10 @@ import android.content.ActivityNotFoundException;
 
                 // layout
                 mScreenLocked.setVisibility(View.VISIBLE);
-                if (mUseRotaryLockScreen) {
+                if (mUseRotaryLockScreen || mUseRotaryRevLockscreen || mUseLenseSquareLockscreen) {
                     mRotarySelector.setVisibility(View.VISIBLE);
+                    mRotarySelector.setRevamped(mUseRotaryRevLockscreen);
+                    mRotarySelector.setLenseSquare(mUseLenseSquareLockscreen);
                     mTabSelector.setVisibility(View.GONE);
                     if (mSelector2 != null) {
                         mSelector2.setVisibility(View.GONE);
@@ -830,8 +849,10 @@ import android.content.ActivityNotFoundException;
 
                 // layout
                 mScreenLocked.setVisibility(View.VISIBLE);
-                if (mUseRotaryLockScreen) {
+                if (mUseRotaryLockScreen || mUseRotaryRevLockscreen || mUseLenseSquareLockscreen) {
                     mRotarySelector.setVisibility(View.VISIBLE);
+                    mRotarySelector.setRevamped(mUseRotaryRevLockscreen);
+                    mRotarySelector.setLenseSquare(mUseLenseSquareLockscreen);
                     mTabSelector.setVisibility(View.GONE);
                     if (mSelector2 != null) {
                         mSelector2.setVisibility(View.GONE);
@@ -877,8 +898,10 @@ import android.content.ActivityNotFoundException;
 
                 // layout
                 mScreenLocked.setVisibility(View.INVISIBLE);
-                if (mUseRotaryLockScreen) {
+                if (mUseRotaryLockScreen || mUseRotaryRevLockscreen || mUseLenseSquareLockscreen) {
                     mRotarySelector.setVisibility(View.VISIBLE);
+                    mRotarySelector.setRevamped(mUseRotaryRevLockscreen);
+                    mRotarySelector.setLenseSquare(mUseLenseSquareLockscreen);
                     mTabSelector.setVisibility(View.GONE);
                     if (mSelector2 != null) {
                         mSelector2.setVisibility(View.GONE);
@@ -1004,5 +1027,18 @@ import android.content.ActivityNotFoundException;
 
     public void onPhoneStateChanged(String newState) {
         mLockPatternUtils.updateEmergencyCallButtonState(mEmergencyCallButton);
+    }
+
+    /*
+* enables or disables visibility of most lockscreen widgets
+* depending on lense status
+*/
+    private void setLenseWidgetsVisibility(int visibility){
+        mDate.setVisibility(visibility);
+        mTime.setVisibility(visibility);
+        mAmPm.setVisibility(visibility);
+        mCarrier.setVisibility(visibility);
+        mStatus1.setVisibility(visibility);
+        mStatus2.setVisibility(visibility);
     }
 }
