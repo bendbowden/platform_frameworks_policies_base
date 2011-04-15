@@ -28,6 +28,7 @@ import android.content.ActivityNotFoundException;
 import android.content.BroadcastReceiver;
 import android.content.ContentResolver;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.ActivityInfo;
@@ -487,8 +488,10 @@ public class PhoneWindowManager implements WindowManagerPolicy {
                     // Make sure it's a foreground user application (not system, root, phone, etc.)
                     if (uid >= Process.FIRST_APPLICATION_UID && uid <= Process.LAST_APPLICATION_UID
                         && appInfo.importance == RunningAppProcessInfo.IMPORTANCE_FOREGROUND) {
-                        // Kill the entire pid
-                        Process.killProcess(appInfo.pid);
+                        // show the kill process dialog
+                        KillProcessDialog kpd = new KillProcessDialog(mContext, appInfo.pid);
+                        kpd.show();
+
                         break;
                     }
                 }
