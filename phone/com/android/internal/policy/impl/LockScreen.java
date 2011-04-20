@@ -116,7 +116,7 @@ import android.content.ActivityNotFoundException;
             Settings.System.LOCKSCREEN_CUSTOM_APP_ACTIVITY));
 
     private int mLockScreenStyle = (Settings.System.getInt(mContext.getContentResolver(),
-            Settings.System.LOCKSCREEN_STYLE_PREF, 3));
+            Settings.System.LOCKSCREEN_STYLE_PREF, 2));
 
     private boolean mRotaryUnlockDown = (Settings.System.getInt(mContext.getContentResolver(),
             Settings.System.LOCKSCREEN_ROTARY_UNLOCK_DOWN, 0) == 1);
@@ -130,6 +130,9 @@ import android.content.ActivityNotFoundException;
 
     private boolean mUseLenseSquareLockscreen = (mLockScreenStyle == 4);
     private boolean mLensePortrait = false;
+
+    private boolean mHideCarrierLock = (Settings.System.getInt(mContext.getContentResolver(),
+            Settings.System.HIDE_CARRIER_LOCK, 0) == 1);
 
     /**
      * The status of this lock screen.
@@ -236,7 +239,14 @@ import android.content.ActivityNotFoundException;
         mCarrier = (TextView) findViewById(R.id.carrier);
         // Required for Marquee to work
         mCarrier.setSelected(true);
+
+	// Hide or Display Carrier on Lockscreen
+	if (!mHideCarrierLock) { 
+	// make it transparent
+        mCarrier.setTextColor(0x00ffffff); // a lil hacky but it works (bdb)
+        } else {
         mCarrier.setTextColor(0xffffffff);
+        }
 
         mTime = (TextView) findViewById(R.id.timeDisplay);
         mAmPm = (TextView) findViewById(R.id.am_pm);
